@@ -2129,3 +2129,40 @@ test "seek keeping partial buffer" {
 
     try testing.expectEqualStrings("6789", &buf);
 }
+
+test "splat larger than buffer" {
+    var tmp_dir = testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const file = try tmp_dir.dir.createFile("test_file", .{ .read = true });
+    defer file.close();
+    var fixed_buf: [100]u8 = undefined;
+    var write_buf: [74]u8 = undefined;
+    var read_buf: [100]u8 = undefined;
+    {
+        const data = "0123456789";
+        const splat = 10;
+        var file_writer: std.fs.File.Writer = .init(file, &write_buf);
+        const n = try file_writer.interface.writeSplat(&.{data}, splat);
+        try testing.expect(n >= write_buf.len - write_buf.len % data.len);
+
+        var w: std.Io.Writer = .fixed(&fixed_buf);
+        _ = try w.writeSplat(&.{data}, splat);
+        var file_reader = file.reader(&read_buf);
+        try file_reader.interface.fill(n);
+        try testing.expectEqualSlices(u8, w.buffered()[0..n], file_reader.interface.buffered());
+    }
+    {
+        const data = "c";
+        const splat = 100;
+        var file_writer: std.fs.File.Writer = .init(file, &write_buf);
+        const n = try file_writer.interface.writeSplat(&.{data}, splat);
+        try testing.expect(n >= write_buf.len - write_buf.len % data.len);
+
+        var w: std.Io.Writer = .fixed(&fixed_buf);
+        _ = try w.writeSplat(&.{data}, splat);
+        var file_reader = file.reader(&read_buf);
+        try file_reader.interface.fill(n);
+        try testing.expectEqualSlices(u8, w.buffered()[0..n], file_reader.interface.buffered());
+    }
+}
