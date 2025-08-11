@@ -1753,10 +1753,10 @@ pub const Writer = struct {
         }
     }
 
-    fn pwrite(w: *Writer, data: []const u8, position: ?u64) std.Io.Writer.Error!usize {
+    fn pwrite(w: *Writer, data: []const u8, offset: ?u64) std.Io.Writer.Error!usize {
         const result = if (is_windows)
-            windows.WriteFile(w.file.handle, data, position)
-        else if (position) |p|
+            windows.WriteFile(w.file.handle, data, offset)
+        else if (offset) |p|
             posix.pwrite(w.file.handle, data, p) catch |err| switch (err) {
                 error.Unseekable => {
                     w.mode = w.mode.toStreaming();
