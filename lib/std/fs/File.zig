@@ -1633,11 +1633,11 @@ pub const Writer = struct {
                 .failure => return error.WriteFailed,
             };
             if (buffered.len != 0) {
-                return io_w.write(buffered, pos);
+                return w.pwrite(buffered, pos);
             }
             for (data[0 .. data.len - 1]) |buf| {
                 if (buf.len == 0) continue;
-                return io_w.write(buf, pos);
+                return w.pwrite(buf, pos);
             }
             const pattern = data[data.len - 1];
             if (pattern.len == 0 or splat == 0) return 0;
@@ -1663,7 +1663,7 @@ pub const Writer = struct {
                 }
                 break :buf splat_buffer[0 .. pattern.len * repeat_count];
             } else pattern;
-            return io_w.write(splat_buffer, pos);
+            return w.pwrite(splat_buffer, pos);
         }
         var iovecs: [max_buffers_len]std.posix.iovec_const = undefined;
         var len: usize = 0;
@@ -1753,20 +1753,34 @@ pub const Writer = struct {
         }
     }
 
-    fn write(io_w: *std.Io.Writer, data: []const u8, pos: ?u64) std.Io.Writer.Error!usize {
-        const w: *Writer = @alignCast(@fieldParentPtr("interface", io_w));
+    fn pwrite(w: *Writer, data: []const u8, position: ?u64) std.Io.Writer.Error!usize {
         const result = if (is_windows)
-            windows.WriteFile(w.handle, data, pos)
-        else if (pos) |p|
-            posix.pwrite(w.handle, data, p)
+            windows.WriteFile(w.file.handle, data, position)
+        else if (position) |p|
+            posix.pwrite(w.file.handle, data, p) catch |err| switch (err) {
+                error.Unseekable => {
+                    w.mode = w.mode.toStreaming();
+                    const pos = w.pos;
+                    if (pos != 0) {
+                        w.pos = 0;
+                        w.seekTo(@intCast(pos)) catch {
+                            w.mode = .failure;
+                            return error.WriteFailed;
+                        };
+                    }
+                    return 0;
+                },
+                else => |e| e,
+            }
         else
-            posix.write(w.handle, data);
+            posix.write(w.file.handle, data);
+
         const n = result catch |err| {
             w.err = err;
             return error.WriteFailed;
         };
         w.pos += n;
-        return io_w.consume(n);
+        return w.interface.consume(n);
     }
 
     pub fn sendFile(
